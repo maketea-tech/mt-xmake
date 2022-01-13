@@ -81,9 +81,11 @@ function main(name, opt)
     local mode = opt.mode
     
     -- mapping plat
-    if plat == "macosx" then
-        plat = "osx"
-    end
+    local plats = {
+        macosx          = "osx",
+        iphoneos        = "ios",
+    }
+    plat = plats[plat] or plat
 
     -- archs mapping for vcpkg
     local archs = {
@@ -93,6 +95,79 @@ function main(name, opt)
         -- android: armeabi armeabi-v7a arm64-v8a x86 x86_64 mips mip64
         -- Offers a doc: https://github.com/microsoft/vcpkg/blob/master/docs/users/android.md
         ["armeabi-v7a"] = "arm",
+
+        -- xmake macro package -p android -o _xbuilds 报错：
+
+        -- Error: invalid triplet: armeabi-android ------- armeabi 不是标准按文档来的吧
+        -- Available architecture triplets
+        -- VCPKG built-in triplets:
+        --   x64-linux
+        --   x64-windows
+        --   x64-windows-static
+        --   x86-windows
+        --   arm64-windows
+        --   x64-uwp
+        --   x64-osx
+        --   arm-uwp
+        
+        -- VCPKG community triplets:
+        --   wasm32-emscripten
+        --   ppc64le-linux
+        --   x86-mingw-static
+        --   arm64-ios
+        --   x64-mingw-dynamic
+        --   x86-freebsd
+        --   armv6-android
+        --   x64-android
+        --   x86-windows-static
+        --   arm-android
+        --   arm64-mingw-dynamic
+        --   arm64-osx
+        --   arm64-windows-static
+        --   arm-linux
+        --   arm-windows
+        --   arm64-uwp
+        --   x86-mingw-dynamic
+        --   s390x-linux
+        --   x64-openbsd
+        --   arm-mingw-dynamic
+        --   arm-neon-android
+        --   x64-ios
+        --   x64-mingw-static
+        --   arm-ios
+        --   x64-osx-dynamic
+        --   x86-android
+        --   x86-uwp
+        --   arm64-linux
+        --   arm64-windows-static-md
+        --   arm64-mingw-static
+        --   x86-windows-static-md
+        --   arm-mingw-static
+        --   arm64-osx-dynamic
+        --   x86-ios
+        --   x64-windows-static-md
+        --   arm64-android
+        --   x86-windows-v120
+
+
+        -- 还有报错：
+--         if you want to get verbose errors, please see:
+--   -> /Users/lilithgames/.xmake/cache/packages/2105/g/gtest/1.10.0/installdir.failed/logs/install.txt
+-- error: install failed!
+-- error: exec(xmake f -p android -a mips  -c ) failed(255)
+-- -- xmake f -p android -a mips  -c 报错是因为需要更老的ndk版本，新的ndk版本把mips移除了。。。。
+
+-- [0m[38;2;0;255;0;1m[ 25%]:[0m compiling.release googlemock/src/gmock-all.cc[0m
+-- [0m[38;2;0;255;0;1m[ 25%]:[0m compiling.release googletest/src/gtest-all.cc[0m
+-- [0m[1;38;2;255;0;0;1merror: [0m/Users/lilithgames/Library/Android/sdk/ndk/21.1.6352462/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include/linux/errno.h:19:10: fatal error: 'asm/errno.h' file not found
+-- #include <asm/errno.h>
+--          ^~~~~~~~~~~~~
+-- 1 error generated.[0m
+
+
+    
+        ["armeabi"] = "arm",
+
         ["arm64-v8a"]   = "arm64",
 
         -- ios: arm64 armv7 armv7s i386
