@@ -23,6 +23,9 @@ local autogendir = path.join("autogen", plat, jit and "jit" or "nojit", arch)
 
 -- add target
 target("luajit")
+    if not is_config("runtime", "luajit") then
+        set_default(false)
+    end
 
     -- make as a static library
     set_kind("static")
@@ -52,6 +55,8 @@ target("luajit")
         add_files(autogendir .. "/*.S")
     end
 
+    add_defines("USE_LUAJIT", {interface = true})
+
     -- disable jit compiler?
     if not jit then
         add_defines("LUAJIT_DISABLE_JIT")
@@ -75,4 +80,4 @@ target("luajit")
         add_cflags("-Wno-error=unused-function")
     end]]
 
-       
+

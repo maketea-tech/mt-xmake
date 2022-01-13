@@ -46,7 +46,7 @@ function _check_targets(targetname)
     -- filter and check targets with builtin-install script
     local targetnames = {}
     for _, target in ipairs(targets) do
-        if not target:is_phony() and target:is_enabled() and not target:script("install") then
+        if target:targetfile() and target:is_enabled() and not target:script("install") then
             local targetfile = target:targetfile()
             if targetfile and not os.isfile(targetfile) then
                 table.insert(targetnames, target:name())
@@ -78,7 +78,7 @@ function main()
         function ()
 
             -- install target
-            install(targetname or ifelse(option.get("all"), "__all", "__def"))
+            install(targetname or (option.get("all") and "__all" or "__def"))
 
             -- trace
             cprint("${color.success}install ok!")
@@ -94,22 +94,14 @@ function main()
                     local ok = try
                     {
                         function ()
-
-                            -- install target
-                            install(targetname or ifelse(option.get("all"), "__all", "__def"))
-
-                            -- trace
+                            install(targetname or (option.get("all") and "__all" or "__def"))
                             cprint("${color.success}install ok!")
-
-                            -- ok
                             return true
                         end
                     }
 
                     -- release privilege
                     privilege.store()
-
-                    -- ok?
                     if ok then return end
                 end
 
@@ -118,9 +110,7 @@ function main()
                 if sudo.has() and option.get("admin") then
 
                     -- install target with administrator permission
-                    sudo.runl(path.join(os.scriptdir(), "install_admin.lua"), {targetname or ifelse(option.get("all"), "__all", "__def"), option.get("installdir"), option.get("prefix")})
-
-                    -- trace
+                    sudo.execl(path.join(os.scriptdir(), "install_admin.lua"), {targetname or (option.get("all") and "__all" or "__def"), option.get("installdir"), option.get("prefix")})
                     cprint("${color.success}install ok!")
                     ok = true
                 end

@@ -22,6 +22,7 @@
 local main = main or {}
 
 -- load modules
+local env           = require("base/compat/env")
 local os            = require("base/os")
 local log           = require("base/log")
 local path          = require("base/path")
@@ -38,15 +39,12 @@ local theme         = require("theme/theme")
 local config        = require("project/config")
 local project       = require("project/project")
 local localcache    = require("cache/localcache")
---local profiler      = require("base/profiler")
+local profiler      = require("base/profiler")
 
 -- init the option menu
 local menu =
 {
-    -- title
-    title = "${bright}xmake v" .. _VERSION .. ", A cross-platform build utility based on Lua${clear}"
-
-    -- copyright
+    title = "${bright}xmake v" .. _VERSION .. ", A cross-platform build utility based on " .. (xmake._LUAJIT and "LuaJIT" or "Lua") .. "${clear}"
 ,   copyright = "Copyright (C) 2015-present Ruki Wang, ${underline}tboox.org${clear}, ${underline}xmake.io${clear}"
 
     -- the tasks: xmake [task]
@@ -63,33 +61,17 @@ local menu =
 
 -- show help and version info
 function main._show_help()
-
-    -- show help
     if option.get("help") then
-
-        -- print menu
         option.show_menu(option.taskname())
-
-        -- ok
         return true
-
-    -- show version
     elseif option.get("version") then
-
-        -- show title
         if menu.title then
             utils.cprint(menu.title)
         end
-
-        -- show copyright
         if menu.copyright then
             utils.cprint(menu.copyright)
         end
-
-        -- show logo
         option.show_logo()
-
-        -- ok
         return true
     end
 end
@@ -199,13 +181,15 @@ function main._init()
 end
 
 -- exit main program
-function main._exit(errors)
+function main._exit(ok, errors)
 
     -- show errors
     local retval = 0
-    if errors then
+    if not ok then
         retval = -1
-        utils.error(errors)
+        if errors then
+            utils.error(errors)
+        end
     end
 
     -- show warnings
@@ -224,17 +208,17 @@ function main.entry()
     -- init
     local ok, errors = main._init()
     if not ok then
-        return main._exit(errors)
+        return main._exit(ok, errors)
     end
 
     -- load global configuration
     ok, errors = global.load()
     if not ok then
-        return main._exit(errors)
+        return main._exit(ok, errors)
     end
 
     -- load theme
-    local theme_inst = theme.load(global.get("theme")) or theme.load("default")
+    local theme_inst = theme.load(os.getenv("XMAKE_THEME") or global.get("theme")) or theme.load("default")
     if theme_inst then
         colors.theme_set(theme_inst)
     end
@@ -242,7 +226,7 @@ function main.entry()
     -- init option
     ok, errors = option.init(menu)
     if not ok then
-        return main._exit(errors)
+        return main._exit(ok, errors)
     end
 
     -- check run command as root
@@ -254,17 +238,19 @@ As xmake does not drop privileges on installation you would be giving all
 build scripts full access to your system.
 Or you can add `--root` option or XMAKE_ROOT=y to allow run as root temporarily.
                 ]]
-                return main._exit(errors)
+                return main._exit(false, errors)
             end
         end
     end
 
     -- start profiling
-    -- profiler:start()
+    if profiler:enabled() then
+        profiler:start()
+    end
 
     -- show help?
     if main._show_help() then
-        return main._exit()
+        return main._exit(true)
     end
 
     -- save command lines to history and we need to make sure that the .xmake directory is not generated everywhere
@@ -283,7 +269,7 @@ Or you can add `--root` option or XMAKE_ROOT=y to allow run as root temporarily.
     local taskname = option.taskname() or "build"
     local taskinst = task.task(taskname) or project.task(taskname)
     if not taskinst then
-        return main._exit(string.format("do unknown task(%s)!", taskname))
+        return main._exit(false, string.format("do unknown task(%s)!", taskname))
     end
 
     -- run task
@@ -296,14 +282,16 @@ Or you can add `--root` option or XMAKE_ROOT=y to allow run as root temporarily.
     end)
     ok, errors = scheduler:runloop()
     if not ok then
-        return main._exit(errors)
+        return main._exit(ok, errors)
     end
 
     -- stop profiling
-    -- profiler:stop()
+    if profiler:enabled() then
+        profiler:stop()
+    end
 
     -- exit normally
-    return main._exit()
+    return main._exit(true)
 end
 
 -- return module: main

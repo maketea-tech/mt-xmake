@@ -46,6 +46,10 @@ toolchain("xcode")
             arch = toolchain:arch()
             simulator = (arch == "i386")
             cross = simulator and "xcrun -sdk watchsimulator " or "xcrun -sdk watchos "
+        elseif toolchain:is_plat("appletvos") then
+            arch = toolchain:arch()
+            simulator = (arch == "i386" or arch == "x86_64")
+            cross = simulator and "xcrun -sdk appletvsimulator " or "xcrun -sdk appletvos "
         else
             raise("unknown platform for xcode!")
         end
@@ -56,7 +60,6 @@ toolchain("xcode")
         toolchain:set("toolset", "ld", cross .. "clang++", cross .. "clang")
         toolchain:set("toolset", "sh", cross .. "clang++", cross .. "clang")
         toolchain:set("toolset", "ar", cross .. "ar")
-        toolchain:set("toolset", "ex", cross .. "ar")
         toolchain:set("toolset", "strip", cross .. "strip")
         toolchain:set("toolset", "dsymutil", cross .. "dsymutil", "dsymutil")
         toolchain:set("toolset", "mm", cross .. "clang")

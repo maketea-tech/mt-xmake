@@ -60,6 +60,8 @@ function _check_vsenv(toolchain)
 
                 -- save vcvars
                 toolchain:config_set("vcvars", vcvars)
+                toolchain:config_set("vs_toolset", vcvars.VCToolsVersion)
+                toolchain:config_set("vs_sdkver", vcvars.WindowsSDKVersion)
 
                 -- check compiler
                 local program = nil
@@ -87,12 +89,6 @@ function _check_vstudio(toolchain)
         cprint("checking for Microsoft Visual Studio (%s) version ... ${color.success}%s", toolchain:arch(), vs)
     else
         cprint("checking for Microsoft Visual Studio (%s) version ... ${color.nothing}${text.nothing}", toolchain:arch())
-        if toolchain:is_plat("windows") then
-            print("please run:")
-            print("    - xmake config --vs=xxx [--vs_toolset=xxx]")
-            print("or  - xmake global --vs=xxx")
-            raise()
-        end
     end
     return vs
 end

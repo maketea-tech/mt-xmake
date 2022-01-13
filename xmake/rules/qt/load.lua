@@ -22,6 +22,7 @@
 import("core.base.semver")
 import("core.project.config")
 import("core.project.target")
+import("core.base.hashset")
 import("lib.detect.find_library")
 
 -- make link for framework
@@ -35,7 +36,11 @@ function _link(linkdirs, framework, qt_sdkver)
         elseif is_plat("android") or is_plat("linux") then
             debug_suffix = ""
         end
-        framework = "Qt" .. qt_sdkver:major() .. framework:sub(3) .. (is_mode("debug") and debug_suffix or "")
+        if qt_sdkver:ge("5.0") then
+            framework = "Qt" .. qt_sdkver:major() .. framework:sub(3) .. (is_mode("debug") and debug_suffix or "")
+        else -- for qt4.x, e.g. QtGui4.lib
+            framework = "Qt" .. framework:sub(3) .. (is_mode("debug") and debug_suffix or "") .. qt_sdkver:major()
+        end
         if is_plat("android") then --> -lQt5Core_armeabi/-lQt5CoreDebug_armeabi for 5.14.x
             local libinfo = find_library(framework .. "_" .. config.arch(), linkdirs)
             if libinfo and libinfo.link then
@@ -76,10 +81,10 @@ function _add_plugins(target, plugins)
     for name, plugin in pairs(plugins) do
         target:values_add("qt.plugins", name)
         if plugin.links then
-            target:values_add("qt.links", unpack(table.wrap(plugin.links)))
+            target:values_add("qt.links", table.unpack(table.wrap(plugin.links)))
         end
         if plugin.linkdirs then
-            target:values_add("qt.linkdirs", unpack(table.wrap(plugin.linkdirs)))
+            target:values_add("qt.linkdirs", table.unpack(table.wrap(plugin.linkdirs)))
         end
     end
 end
@@ -188,7 +193,7 @@ function main(target, opt)
     end
 
     -- do frameworks for qt
-    local useframeworks = false
+    local frameworksset = hashset.new()
     for _, framework in ipairs(target:get("frameworks")) do
 
         -- translate qt frameworks
@@ -216,13 +221,13 @@ function main(target, opt)
                 -- add includedirs
                 if is_plat("macosx") then
                     local frameworkdir = path.join(qt.libdir, framework .. ".framework")
-                    if os.isdir(frameworkdir) and not framework:endswith("Support") then
+                    if os.isdir(frameworkdir) and os.isdir(path.join(frameworkdir, "Headers")) then
                         _add_includedirs(target, path.join(frameworkdir, "Headers"))
                         -- e.g. QtGui.framework/Headers/5.15.0/QtGui/qpa/qplatformopenglcontext.h
                         -- https://github.com/xmake-io/xmake/issues/1226
                         _add_includedirs(target, path.join(frameworkdir, "Headers", qt.sdkver))
                         _add_includedirs(target, path.join(frameworkdir, "Headers", qt.sdkver, framework))
-                        useframeworks = true
+                        frameworksset:insert(framework)
                     else
                         target:add("syslinks", _link(qt.libdir, framework, qt_sdkver))
                         _add_includedirs(target, path.join(qt.includedir, framework))
@@ -243,9 +248,7 @@ function main(target, opt)
     -- remove private frameworks
     local local_frameworks = {}
     for _, framework in ipairs(target:get("frameworks")) do
-        if target:is_plat("macosx") and framework:endswith("Support") then
-            -- we need handle Qt*Support as plain links, e.g. QtPlatformSupport
-        elseif not framework:lower():endswith("private") then
+        if frameworksset:has(framework) then
             table.insert(local_frameworks, framework)
         end
     end
@@ -264,7 +267,7 @@ function main(target, opt)
     if is_plat("macosx") then
         target:add("frameworks", "DiskArbitration", "IOKit", "CoreFoundation", "CoreGraphics", "OpenGL")
         target:add("frameworks", "Carbon", "Foundation", "AppKit", "Security", "SystemConfiguration")
-        if useframeworks then
+        if not frameworksset:empty() then
             target:add("frameworkdirs", qt.libdir)
             target:add("rpathdirs", "@executable_path/Frameworks", qt.libdir)
         else

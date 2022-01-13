@@ -1,4 +1,3 @@
--- add target
 target("xmake")
 
     -- make as a static library
@@ -8,7 +7,8 @@ target("xmake")
     if has_config("curses") or has_config("pdcurses") then
         add_deps("lcurses")
     end
-    add_deps("sv", "luajit", "lua-cjson", "tbox")
+    add_deps("sv", "lua-cjson", "tbox")
+    add_deps(get_config("runtime"))
 
     -- add defines
     add_defines("__tb_prefix__=\"xmake\"")
@@ -40,5 +40,5 @@ target("xmake")
     if is_plat("windows") then
         add_defines("UNICODE", "_UNICODE")
     end
- 
+
 

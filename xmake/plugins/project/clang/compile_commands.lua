@@ -34,19 +34,46 @@ end
 -- https://github.com/xmake-io/xmake/issues/1050
 function _translate_arguments(arguments)
     local args = {}
-    local is_msvc = path.basename(arguments[1]):lower() == "cl"
-    for _, arg in ipairs(arguments) do
+    local cc = path.basename(arguments[1]):lower()
+    local is_include = false
+    for idx, arg in ipairs(arguments) do
+        -- see https://github.com/xmake-io/xmake/issues/1721
+        if idx == 1 and is_host("windows") and path.extension(arg) == "" then
+            arg = arg .. ".exe"
+        end
         if arg:find("-isystem", 1, true) then
             arg = arg:replace("-isystem", "-I")
         elseif arg:find("[%-/]external:I") then
             arg = arg:gsub("[%-/]external:I", "-I")
         elseif arg:find("[%-/]external:W") or arg:find("[%-/]experimental:external") then
             arg = nil
+        -- escape '"' for the defines
+        -- https://github.com/xmake-io/xmake/issues/1506
+        elseif arg:find("^-D") then
+            arg = arg:gsub("\"", "\\\"")
         end
         -- @see use msvc-style flags for msvc to support language-server better
         -- https://github.com/xmake-io/xmake/issues/1284
-        if is_msvc and arg and arg:startswith("-") then
+        if cc == "cl" and arg and arg:startswith("-") then
             arg = arg:gsub("^%-", "/")
+        elseif cc == "nvcc" and arg then
+            -- support -I path with spaces for nvcc
+            -- https://github.com/xmake-io/xmake/issues/1726
+            if is_include then
+                if arg and arg:find(' ', 1, true) then
+                    arg = "\"" .. arg .. "\""
+                end
+                is_include = false
+            elseif arg:startswith("-I") then
+                local f = arg:sub(1, 2)
+                local v = arg:sub(3)
+                if v and v:find(' ', 1, true) then
+                    arg = f .. "\"" .. v .. "\""
+                end
+            end
+        end
+        if arg == "-I" then
+            is_include = true
         end
         if arg then
             table.insert(args, arg)
@@ -161,6 +188,9 @@ end
 -- make target
 function _make_target(jsonfile, target)
 
+    -- enter package environments
+    local oldenvs = os.addenvs(target:pkgenvs())
+
     -- TODO
     -- disable precompiled header first
     target:set("pcheader", nil)
@@ -170,6 +200,9 @@ function _make_target(jsonfile, target)
     for _, sourcebatch in pairs(target:sourcebatches()) do
         _make_objects(jsonfile, target, sourcebatch)
     end
+
+    -- restore package environments
+    os.setenvs(oldenvs)
 end
 
 -- make all

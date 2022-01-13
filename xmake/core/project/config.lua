@@ -90,23 +90,20 @@ function config.options()
 end
 
 -- get the buildir
-function config.buildir()
+-- we can use `{absolute = true}` to force to get absolute path
+function config.buildir(opt)
 
     -- get the absolute path first
+    opt = opt or {}
     local buildir = config.get("buildir") or "build"
     if not path.is_absolute(buildir) then
-        local rootdir
-        if os.isdir(path.join(os.workingdir(), ".xmake")) then
-            -- we switch to independent working directory @see https://github.com/xmake-io/xmake/issues/820
-            rootdir = os.workingdir()
-        else
-            rootdir = os.projectdir()
-        end
-        buildir = path.absolute(buildir, rootdir)
+        buildir = path.absolute(buildir, os.projectdir())
     end
 
     -- adjust path for the current directory
-    buildir = path.relative(buildir, os.curdir())
+    if not opt.absolute then
+        buildir = path.relative(buildir, os.curdir())
+    end
     return buildir
 end
 
@@ -137,10 +134,11 @@ function config.directory()
 end
 
 -- load the project configuration
-function config.load()
+function config.load(filepath)
     local configs, errors
-    if os.isfile(config.filepath()) then
-        configs, errors = io.load(config.filepath())
+    filepath = filepath or config.filepath()
+    if os.isfile(filepath) then
+        configs, errors = io.load(filepath)
         if not configs then
             utils.error(errors)
             return false
@@ -160,8 +158,20 @@ function config.load()
 end
 
 -- save the project configuration
-function config.save()
-    return io.save(config.filepath(), config.options())
+function config.save(filepath, opt)
+    opt = opt or {}
+    filepath = filepath or config.filepath()
+    if opt.public then
+        local configs = {}
+        for name, value in pairs(config.options()) do
+            if not name:startswith("__") then
+                configs[name] = value
+            end
+        end
+        return io.save(filepath, configs, {orderkeys = true})
+    else
+        return io.save(filepath, config.options(), {orderkeys = true})
+    end
 end
 
 -- read value from the configuration file directly

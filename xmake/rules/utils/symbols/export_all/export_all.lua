@@ -24,7 +24,7 @@ import("core.tool.toolchain")
 import("core.base.option")
 import("core.base.hashset")
 import("core.project.depend")
-import("private.utils.progress")
+import("utils.progress")
 
 -- export all symbols for dynamic library
 function main (target, opt)
@@ -47,19 +47,34 @@ function main (target, opt)
         local msvc = toolchain.load("msvc", {plat = target:plat(), arch = target:arch()})
         local dumpbin = assert(find_tool("dumpbin", {envs = msvc:runenvs()}), "dumpbin not found!")
 
+        -- export c++ class?
+        local export_classes = target:extraconf("rules", "utils.symbols.export_all", "export_classes")
+
         -- get all symbols from object files
         local allsymbols = hashset.new()
         for _, objectfile in ipairs(target:objectfiles()) do
             local objectsymbols = try { function () return os.iorunv(dumpbin.program, {"/symbols", "/nologo", objectfile}) end }
             if objectsymbols then
                 for _, line in ipairs(objectsymbols:split('\n', {plain = true})) do
+                    -- https://docs.microsoft.com/en-us/cpp/build/reference/symbols
                     -- 008 00000000 SECT3  notype ()    External     | add
-                    if line:find("External") then
+                    if line:find("External") and not line:find("UNDEF") then
                         local symbol = line:match(".*External%s+| (.*)")
                         if symbol then
                             symbol = symbol:split('%s')[1]
-                            if not symbol:startswith("__") and not symbol:startswith("?") then
-                                allsymbols:insert(symbol)
+                            if not symbol:startswith("__") then
+                                if target:is_arch("x86") and symbol:startswith("_") then
+                                    symbol = symbol:sub(2)
+                                end
+                                if export_classes or not symbol:startswith("?") then
+                                    if export_classes then
+                                        if not symbol:startswith("??_G") and not symbol:startswith("??_E") then
+                                            allsymbols:insert(symbol)
+                                        end
+                                    else
+                                        allsymbols:insert(symbol)
+                                    end
+                                end
                             end
                         end
                     end

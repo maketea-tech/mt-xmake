@@ -28,5 +28,16 @@ toolchain("cuda")
     -- set toolset
     set_toolset("cu",   "nvcc", "clang")
     set_toolset("culd", "nvcc")
-    set_toolset("cu-ccbin", "$(env CXX)", "$(env CC)", "clang", "gcc")
+    set_toolset("cu-ccbin", "$(env CXX)", "$(env CC)")
+
+    -- bind msvc environments, because nvcc will call cl.exe
+    on_load(function (toolchain)
+        if toolchain:is_plat("windows") then
+            import("core.tool.toolchain", {alias = "core_toolchain"})
+            local msvc = core_toolchain.load("msvc", {plat = toolchain:plat(), arch = toolchain:arch()})
+            for name, values in pairs(msvc:runenvs()) do
+                toolchain:add("runenvs", name, values)
+            end
+        end
+    end)
 

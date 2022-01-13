@@ -86,7 +86,7 @@ include project.mak
 # ######################################################################################
 # no-config
 # #
-all : 
+all :
 	make -r f
 	make -r r
 
@@ -107,9 +107,9 @@ update :
 	make -r f
 	make -r u
 
-output :	
-error :		
-warning :	
+output :
+error :
+warning :
 doc :
 	make -r f
 	make -r d
@@ -227,8 +227,8 @@ TOOL_DIR 	:= $(PRO_DIR)/tool
 CXFLAG		:= $(if $(CXFLAG),$(CXFLAG),)
 
 # ccache
-CCACHE		:= 
-DISTCC		:= 
+CCACHE		:=
+DISTCC		:=
 
 # sed
 ifeq ($(HOST),macosx)
@@ -256,7 +256,7 @@ SHELL 		= bash
 endif
 ECHO 		:= echo -e
 
-# make upper 
+# make upper
 define MAKE_UPPER
 ${shell echo $(1) | $(SEDX) "s/\(.*\)/\U\1/g"}
 endef
@@ -268,15 +268,21 @@ base_LIBNAMES 	:= curses readline m dl pthread
 endif
 
 ifeq ($(PLAT),windows)
-base_LIBPATH 	:= 
+base_LIBPATH 	:=
 base_LIBNAMES 	:= ws2_32
 endif
 
 ifeq ($(PLAT),linux)
 base_LIBPATH 	:=
-base_LIBNAMES 	:= 
-base_LIBNAMES 	+= $(shell if { cat detect/curses.c | $(CC) -xc - -lcurses -ltinfo -o /dev/null 2>/dev/null; }; then echo curses tinfo; fi ) 
-base_LIBNAMES 	+= $(shell if { cat detect/readline.c | $(CC) -xc - -lreadline -o /dev/null 2>/dev/null; }; then echo readline; fi ) 
+base_LIBNAMES 	:=
+base_LIBNAMES 	+= $(shell if { cat detect/curses.c | $(CC) -xc - -lcurses -ltinfo -o /dev/null 2>/dev/null; }; then echo curses tinfo; fi )
+base_LIBNAMES 	+= $(shell if { cat detect/readline.c | $(CC) -xc - -lreadline -o /dev/null 2>/dev/null; }; then echo readline; fi )
+base_LIBNAMES 	+= $(shell if { cat detect/tbox.c | $(CC) -xc - -ltbox -o /dev/null 2>/dev/null; }; then echo tbox; fi )
+base_LIBNAMES 	+= $(shell if { cat detect/lua-cjson.c | $(CC) -xc - -llua5.1-cjson -lluajit-5.1 -o /dev/null 2>/dev/null; }; then echo lua5.1-cjson; fi )
+base_LIBNAMES 	+= $(shell if { cat detect/sv.c | $(CC) -xc - -lsv -o /dev/null 2>/dev/null; }; then echo sv; fi )
+ifeq ($(LUAJIT_SYSTEM),y)
+base_LIBNAMES 	+= $(shell if { cat detect/luajit.c | $(CC) -xc - $(shell pkg-config --libs --cflags luajit) -o /dev/null 2>/dev/null; }; then echo luajit-5.1; fi )
+endif
 ifneq ($(TERMUX_ARCH),) # on termux/ci?
 base_LIBNAMES 	+= m dl
 else
@@ -286,16 +292,24 @@ endif
 
 ifeq ($(PLAT),bsd)
 base_LIBPATH 	:=
-base_LIBNAMES 	:= 
-base_LIBNAMES 	+= $(shell if { cat detect/curses.c | $(CC) -xc - -lcurses -ltinfo -o /dev/null 2>/dev/null; }; then echo curses tinfo; fi ) 
-base_LIBNAMES 	+= $(shell if { cat detect/readline.c | $(CC) -xc - -lreadline -o /dev/null 2>/dev/null; }; then echo readline; fi ) 
+base_LIBNAMES 	:=
+base_LIBNAMES 	+= $(shell if { cat detect/curses.c | $(CC) -xc - -lcurses -ltinfo -o /dev/null 2>/dev/null; }; then echo curses tinfo; fi )
+base_LIBNAMES 	+= $(shell if { cat detect/readline.c | $(CC) -xc - -lreadline -o /dev/null 2>/dev/null; }; then echo readline; fi )
 base_LIBNAMES 	+= m dl pthread
+endif
+
+# get branch and commit
+ifeq ($(BRANCH),)
+BRANCH := $(shell git rev-parse --abbrev-ref HEAD 2>/dev/null)
+endif
+ifeq ($(COMMIT),)
+COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null)
 endif
 
 # check jit compiler
 ifeq ($(PLAT),linux)
 luajit_JIT :=$(shell if [ -f "/etc/redhat-release" ]; then echo "nojit"; else echo "jit"; fi )
-ifeq ($(BUILD_ARCH),mips64) # maybe it is not very stable yet, we need to disable it 
+ifeq ($(BUILD_ARCH),mips64) # maybe it is not very stable yet, we need to disable it
 luajit_JIT :=nojit
 endif
 else
@@ -354,6 +368,8 @@ config : .null
 	@$(ECHO) "    small:\t\t"$(SMALL)
 	@$(ECHO) "    ccache:\t\t"$(CCACHE)
 	@$(ECHO) "    distcc:\t\t"$(DISTCC)
+	@$(ECHO) "    branch:\t\t"$(BRANCH)
+	@$(ECHO) "    commit:\t\t"$(COMMIT)
 	@$(ECHO) "    luajit:\t\t"$(luajit_JIT)
 	@$(ECHO) ""
 	@$(ECHO) "packages:"
@@ -362,6 +378,7 @@ config : .null
 	@$(ECHO) "directories:"
 	@$(ECHO) "    install:\t\t"$(abspath $(INSTALL))
 	@$(ECHO) "    package:\t\t"$(PACKAGE)
+	@$(ECHO) "    backend:\t\t"$(RUNTIME)
 	@$(ECHO) ""
 	@$(ECHO) "toolchains:"
 	@$(ECHO) "    bin:\t\t"$(BIN)
@@ -386,6 +403,10 @@ config : .null
 	@$(ECHO) "# project"								>> .config.mak
 	@$(ECHO) "PRO_DIR ="$(PRO_DIR)						>> .config.mak
 	@$(ECHO) "export PRO_DIR"							>> .config.mak
+	@$(ECHO) "BRANCH ="$(BRANCH)						>> .config.mak
+	@$(ECHO) "export BRANCH"							>> .config.mak
+	@$(ECHO) "COMMIT ="$(COMMIT)						>> .config.mak
+	@$(ECHO) "export COMMIT"							>> .config.mak
 	@$(ECHO) ""											>> .config.mak
 	@$(ECHO) "# profile"								>> .config.mak
 	@$(ECHO) "PROF ="$(PROF)							>> .config.mak
@@ -452,6 +473,10 @@ config : .null
 	@$(ECHO) "export SH4"								>> .config.mak
 	@$(ECHO) "export MIPS"								>> .config.mak
 	@$(ECHO) "export SPARC"								>> .config.mak
+	@$(ECHO) ""											>> .config.mak
+	@$(ECHO) "# backend"								>> .config.mak
+	@$(ECHO) "RUNTIME ="$(RUNTIME)						>> .config.mak
+	@$(ECHO) "export RUNTIME"							>> .config.mak
 	@$(ECHO) ""											>> .config.mak
 	@$(ECHO) "# demo"									>> .config.mak
 	@$(ECHO) "DEMO ="$(DEMO)							>> .config.mak

@@ -19,7 +19,6 @@
 --
 
 -- imports
-import("core.base.cli")
 import("core.base.option")
 import("core.project.config")
 import("core.platform.platform")
@@ -142,7 +141,7 @@ function _get_configs(artifacts_dir)
     -- add extra user configs
     local tryconfigs = config.get("tryconfigs")
     if tryconfigs then
-        for _, opt in ipairs(cli.parse(tryconfigs)) do
+        for _, opt in ipairs(os.argv(tryconfigs)) do
             table.insert(configs, tostring(opt))
         end
     end
@@ -222,8 +221,10 @@ function build()
     if not os.isfile("configure") then
         if os.isfile("autogen.sh") then
             os.vexecv("sh", {"./autogen.sh"})
-        elseif os.isfile("configure.ac") then
-            os.vexecv("sh", {"autoreconf", "--install", "--symlink"})
+        elseif os.isfile("configure.ac") or os.isfile("configure.in") then
+            local autoreconf = find_tool("autoreconf")
+            assert(autoreconf, "autoreconf not found!")
+            os.vexecv("sh", {autoreconf.program, "--install", "--symlink"})
         end
     end
 

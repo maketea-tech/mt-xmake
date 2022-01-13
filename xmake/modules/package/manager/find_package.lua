@@ -56,13 +56,18 @@ function _find_package_with_builtin_rule(package_name, opt)
         -- only support the current sub-host platform and sub-architecture, e.g. linux, macosx, or msys (subsystem)
         if opt.plat == os.subhost() and opt.arch == os.subarch() then
 
+            -- find it from pkg-config
+            table.insert(managers, "pkgconfig")
+
             -- find it from pacman
             if is_subhost("linux", "msys") and not is_plat("windows") and find_tool("pacman") then
                 table.insert(managers, "pacman")
             end
 
-            -- find it from pkg-config
-            table.insert(managers, "pkgconfig")
+            -- find it from portage
+            if is_subhost("linux", "msys") and not is_plat("windows") and find_tool("emerge") then
+                table.insert(managers, "portage")
+            end
 
             -- find it from system
             table.insert(managers, "system")
@@ -169,7 +174,7 @@ function main(name, opt)
     opt.mode = opt.mode or config.mode() or "release"
 
     -- get package manager name
-    local manager_name, package_name = unpack(name:split("::", {plain = true, strict = true}))
+    local manager_name, package_name = table.unpack(name:split("::", {plain = true, strict = true}))
     if package_name == nil then
         package_name = manager_name
         manager_name = nil
@@ -179,7 +184,7 @@ function main(name, opt)
 
     -- get package name and require version
     local require_version = nil
-    package_name, require_version = unpack(package_name:trim():split("%s"))
+    package_name, require_version = table.unpack(package_name:trim():split("%s"))
     opt.require_version = require_version or opt.require_version
 
     -- find package

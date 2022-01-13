@@ -4,7 +4,7 @@ $Env:XMAKE_EXE = Join-Path $BASE_DIR xmake.exe
 
 
 if ($Args.Count -eq 0) {
-    # No args, just call the underlying conda executable.
+    # No args, just call the underlying xmake executable.
     & $Env:XMAKE_EXE lua private.xrepo;
 } else {
     $Command = $Args[0];
@@ -19,16 +19,29 @@ if ($Args.Count -eq 0) {
                 if ((Test-Path 'Env:XMAKE_PROMPT_MODIFIER') -and ($Env:XMAKE_PROMPT_MODIFIER -ne "")) {
                     Exit-XrepoEnvironment;
                 }
-                Enter-XrepoEnvironment;
+                Enter-XrepoEnvironment $Null;
                 return;
             }
             "quit" {
                 Exit-XrepoEnvironment;
                 return;
             }
+            {$_ -in "-b", "--bind"} {
+                if (($Args.Count -ge 4) -and ($Args[3] -eq "shell")) {
+                    if (-not (Test-Path 'Env:XMAKE_ROOTDIR')) {
+                        $Env:XMAKE_ROOTDIR = $BASE_DIR;
+                        Import-Module "$Env:XMAKE_ROOTDIR\scripts\xrepo-hook.psm1";
+                        Add-XrepoEnvironmentToPrompt;
+                    }
+                    if ((Test-Path 'Env:XMAKE_PROMPT_MODIFIER') -and ($Env:XMAKE_PROMPT_MODIFIER -ne "")) {
+                        Exit-XrepoEnvironment;
+                    }
+                    Enter-XrepoEnvironment $Args[2];
+                    return;
+                }
+            }
         }
     }
 
-    $OtherArgs = @();
-    & $Env:XMAKE_EXE lua private.xrepo $Command @OtherArgs;
+    & $Env:XMAKE_EXE lua private.xrepo $Args;
 }

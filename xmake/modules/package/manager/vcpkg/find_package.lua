@@ -20,56 +20,50 @@
 
 -- imports
 import("lib.detect.find_file")
-import("lib.detect.find_library")
 import("lib.detect.find_tool")
+import("core.base.option")
 import("core.project.config")
 import("core.project.target")
+import("detect.sdks.find_vcpkgdir")
+import("package.manager.vcpkg.configurations")
+import("package.manager.pkgconfig.find_package", {alias = "find_package_from_pkgconfig"})
 
--- find vcpkg root directory
-function _find_vcpkgdir()
-    local vcpkgdir = _g.vcpkgdir
-    if vcpkgdir == nil then
-        local vcpkg = find_tool("vcpkg")
-        if vcpkg then
-            local dir = path.directory(vcpkg.program)
-            if os.isdir(path.join(dir, "installed")) then
-                vcpkgdir = dir
-            elseif is_host("macosx", "linux") then
-                local brew = find_tool("brew")
-                if brew then
-                    dir = try
-                    {
-                        function ()
-                            return os.iorunv(brew.program, {"--prefix", "vcpkg"})
-                        end
-                    }
-                end
-                if dir then
-                    dir = path.join(dir:trim(), "libexec")
-                    if os.isdir(path.join(dir, "installed")) then
-                        vcpkgdir = dir
-                    end
-                end
+-- we iterate over each pkgconfig file to extract the required data
+function _find_package_from_pkgconfig(pkgconfig_files, opt)
+    opt = opt or {}
+    local foundpc = false
+    local result = {includedirs = {}, linkdirs = {}, links = {}}
+    for _, pkgconfig_file in ipairs(pkgconfig_files) do
+        local pkgconfig_dir = path.join(opt.installdir, path.directory(pkgconfig_file))
+        local pkgconfig_name = path.basename(pkgconfig_file)
+        local pcresult = find_package_from_pkgconfig(pkgconfig_name, {configdirs = pkgconfig_dir, linkdirs = opt.linkdirs})
 
+        -- the pkgconfig file has been parse successfully
+        if pcresult then
+            for _, includedir in ipairs(pcresult.includedirs) do
+                table.insert(result.includedirs, includedir)
             end
+            for _, linkdir in ipairs(pcresult.linkdirs) do
+                table.insert(result.linkdirs, linkdir)
+            end
+            for _, link in ipairs(pcresult.links) do
+                table.insert(result.links, link)
+            end
+            -- version should be the same if a pacman package contains multiples .pc
+            result.version = pcresult.version
+            foundpc = true
         end
-        _g.vcpkgdir = vcpkgdir or false
     end
-    return vcpkgdir or nil
+
+    if foundpc == true then
+        result.includedirs = table.unique(result.includedirs)
+        result.linkdirs = table.unique(result.linkdirs)
+        result.links = table.reverse_unique(result.links)
+        return result
+    end
 end
 
--- find package from the vcpkg package manager
---
--- @param name  the package name, e.g. zlib, pcre
--- @param opt   the options, e.g. {verbose = true, version = "1.12.x")
---
-function main(name, opt)
-
-    -- attempt to find vcpkg directory
-    local vcpkgdir = _find_vcpkgdir()
-    if not vcpkgdir then
-        return
-    end
+function _find_package(vcpkgdir, name, opt)
 
     -- fix name, e.g. ffmpeg[x264] as ffmpeg
     -- @see https://github.com/xmake-io/xmake/issues/925
@@ -81,128 +75,47 @@ function main(name, opt)
     local mode = opt.mode
     
     -- mapping plat
-    local plats = {
-        macosx          = "osx",
-        iphoneos        = "ios",
-    }
-    plat = plats[plat] or plat
+    plat = configurations.arch(plat)
 
     -- archs mapping for vcpkg
-    local archs = {
-        x86_64          = "x64",
-        i386            = "x86",
+    arch = configurations.arch(arch)
 
-        -- android: armeabi armeabi-v7a arm64-v8a x86 x86_64 mips mip64
-        -- Offers a doc: https://github.com/microsoft/vcpkg/blob/master/docs/users/android.md
-        ["armeabi-v7a"] = "arm",
-
-        -- xmake macro package -p android -o _xbuilds 报错：
-
-        -- Error: invalid triplet: armeabi-android ------- armeabi 不是标准按文档来的吧
-        -- Available architecture triplets
-        -- VCPKG built-in triplets:
-        --   x64-linux
-        --   x64-windows
-        --   x64-windows-static
-        --   x86-windows
-        --   arm64-windows
-        --   x64-uwp
-        --   x64-osx
-        --   arm-uwp
-        
-        -- VCPKG community triplets:
-        --   wasm32-emscripten
-        --   ppc64le-linux
-        --   x86-mingw-static
-        --   arm64-ios
-        --   x64-mingw-dynamic
-        --   x86-freebsd
-        --   armv6-android
-        --   x64-android
-        --   x86-windows-static
-        --   arm-android
-        --   arm64-mingw-dynamic
-        --   arm64-osx
-        --   arm64-windows-static
-        --   arm-linux
-        --   arm-windows
-        --   arm64-uwp
-        --   x86-mingw-dynamic
-        --   s390x-linux
-        --   x64-openbsd
-        --   arm-mingw-dynamic
-        --   arm-neon-android
-        --   x64-ios
-        --   x64-mingw-static
-        --   arm-ios
-        --   x64-osx-dynamic
-        --   x86-android
-        --   x86-uwp
-        --   arm64-linux
-        --   arm64-windows-static-md
-        --   arm64-mingw-static
-        --   x86-windows-static-md
-        --   arm-mingw-static
-        --   arm64-osx-dynamic
-        --   x86-ios
-        --   x64-windows-static-md
-        --   arm64-android
-        --   x86-windows-v120
-
-
-        -- 还有报错：
---         if you want to get verbose errors, please see:
---   -> /Users/lilithgames/.xmake/cache/packages/2105/g/gtest/1.10.0/installdir.failed/logs/install.txt
--- error: install failed!
--- error: exec(xmake f -p android -a mips  -c ) failed(255)
--- -- xmake f -p android -a mips  -c 报错是因为需要更老的ndk版本，新的ndk版本把mips移除了。。。。
-
--- [0m[38;2;0;255;0;1m[ 25%]:[0m compiling.release googlemock/src/gmock-all.cc[0m
--- [0m[38;2;0;255;0;1m[ 25%]:[0m compiling.release googletest/src/gtest-all.cc[0m
--- [0m[1;38;2;255;0;0;1merror: [0m/Users/lilithgames/Library/Android/sdk/ndk/21.1.6352462/toolchains/llvm/prebuilt/darwin-x86_64/sysroot/usr/include/linux/errno.h:19:10: fatal error: 'asm/errno.h' file not found
--- #include <asm/errno.h>
---          ^~~~~~~~~~~~~
--- 1 error generated.[0m
-
-
-    
-        ["armeabi"] = "arm",
-
-        ["arm64-v8a"]   = "arm64",
-
-        -- ios: arm64 armv7 armv7s i386
-        armv7           = "arm",
-        armv7s          = "arm",
-        arm64           = "arm64",
-    }
-    -- mapping arch
-    arch = archs[arch] or arch
-
-    -- get the vcpkg installed directory
-    local installdir = path.join(vcpkgdir, "installed")
-
-    -- get the vcpkg info directory
-    local infodir = path.join(installdir, "vcpkg", "info")
+    -- get the vcpkg info directories
+    local infodirs = {}
+	if opt.installdir then
+        table.join2(infodirs, path.join(opt.installdir, "vcpkg_installed", "vcpkg", "info"))
+	end
+    table.join2(infodirs, path.join(vcpkgdir, "installed", "vcpkg", "info"))
 
     -- find the package info file, e.g. zlib_1.2.11-3_x86-windows[-static].list
     local triplet = arch .. "-" .. plat
-    local pkgconfigs = opt.pkgconfigs
-    if plat == "windows" and pkgconfigs and pkgconfigs.shared ~= true then
+    local configs = opt.configs or {}
+    if plat == "windows" and configs.shared ~= true then
         triplet = triplet .. "-static"
-        if pkgconfigs.vs_runtime and pkgconfigs.vs_runtime:startswith("MD") then
+        if configs.vs_runtime and configs.vs_runtime:startswith("MD") then
             triplet = triplet .. "-md"
         end
     end
-    local infofile = find_file(format("%s_*_%s.list", name, triplet), infodir)
+    local infofile = find_file(format("%s_*_%s.list", name, triplet), infodirs)
+    if not infofile then
+        return
+    end
+    local installdir = path.directory(path.directory(path.directory(infofile)))
 
     -- save includedirs, linkdirs and links
     local result = nil
-    local info = infofile and io.readfile(infofile) or nil
+    local pkgconfig_files = {}
+    local info = io.readfile(infofile)
     if info then
         for _, line in ipairs(info:split('\n')) do
             line = line:trim()
             if plat == "windows" then
                 line = line:lower()
+            end
+
+            -- get pkgconfig files
+            if line:find(triplet .. (mode == "debug" and "/debug" or "") .. "/lib/pkgconfig/", 1, true) and line:endswith(".pc") then
+                table.insert(pkgconfig_files, line)
             end
 
             -- get includedirs
@@ -213,14 +126,14 @@ function main(name, opt)
             end
 
             -- get linkdirs and links
-            if (plat == "windows" and line:endswith(".lib")) or line:endswith(".a") then
+            if (plat == "windows" and line:endswith(".lib")) or line:endswith(".a") or line:endswith(".so") then
                 if line:find(triplet .. (mode == "debug" and "/debug" or "") .. "/lib/", 1, true) then
                     result = result or {}
                     result.links = result.links or {}
                     result.linkdirs = result.linkdirs or {}
                     result.libfiles = result.libfiles or {}
                     table.insert(result.linkdirs, path.join(installdir, path.directory(line)))
-                    table.insert(result.links, target.linkname(path.filename(line)))
+                    table.insert(result.links, target.linkname(path.filename(line), {plat = plat}))
                     table.insert(result.libfiles, path.join(installdir, path.directory(line), path.filename(line)))
                 end
             end
@@ -238,8 +151,16 @@ function main(name, opt)
         end
     end
 
+    -- find result from pkgconfig first
+    if #pkgconfig_files > 0 then
+        local pkgconfig_result = _find_package_from_pkgconfig(pkgconfig_files, {installdir = installdir, linkdirs = result and result.linkdirs})
+        if pkgconfig_result then
+            result = pkgconfig_result
+        end
+    end
+
     -- save version
-    if result and infofile then
+    if result then
         local infoname = path.basename(infofile)
         result.version = infoname:match(name .. "_(%d+%.?%d*%.?%d*.-)_" .. arch)
         if not result.version then
@@ -259,3 +180,22 @@ function main(name, opt)
     return result
 end
 
+-- find package from the vcpkg package manager
+--
+-- @param name  the package name, e.g. zlib, pcre
+-- @param opt   the options, e.g. {verbose = true)
+--
+function main(name, opt)
+
+    -- attempt to find vcpkg directory
+    local vcpkgdir = find_vcpkgdir()
+    if not vcpkgdir then
+        if option.get("diagnosis") then
+            cprint("${color.warning}checkinfo: ${clear dim}vcpkg root directory not found, maybe you need set $VCPKG_ROOT!")
+        end
+        return
+    end
+
+    -- do find package
+    return _find_package(vcpkgdir, name, opt)
+end

@@ -26,7 +26,7 @@ import("core.project.project")
 import("core.platform.platform")
 import("core.language.language")
 import("private.tools.ccache")
-import("private.utils.progress")
+import("utils.progress")
 
 -- init it
 function init(self)
@@ -59,7 +59,7 @@ function nf_symbol(self, level, target)
     -- debug? generate *.pdb file
     local flags = nil
     if level == "debug" then
-        flags = "-g -lineinfo"
+        flags = {"-g", "-lineinfo"}
         if is_plat("windows") then
             local host_flags = nil
             local symbolfile = nil
@@ -82,11 +82,10 @@ function nf_symbol(self, level, target)
             else
                 host_flags = "-Zi"
             end
-            flags = flags .. ' -Xcompiler "' .. host_flags .. '"'
+            table.insert(flags, "-Xcompiler")
+            table.insert(flags, host_flags)
         end
     end
-
-    -- none
     return flags
 end
 
@@ -178,6 +177,8 @@ function nf_language(self, stdname)
             cxx03       = "--std c++03"
         ,   cxx11       = "--std c++11"
         ,   cxx14       = "--std c++14"
+        ,   cxx17       = "--std c++17"
+        ,   cxxlatest   = {"--std c++17", "--std c++14", "--std c++11", "--std c++03"}
         }
         local cxxmaps2 = {}
         for k, v in pairs(_g.cxxmaps) do
@@ -185,7 +186,18 @@ function nf_language(self, stdname)
         end
         table.join2(_g.cxxmaps, cxxmaps2)
     end
-    return _g.cxxmaps[stdname]
+    local maps = _g.cxxmaps
+    local result = maps[stdname]
+    if type(result) == "table" then
+        for _, v in ipairs(result) do
+            if self:has_flags(v, "cxflags") then
+                result = v
+                maps[stdname] = result
+                break
+            end
+        end
+    end
+    return result
 end
 
 -- make the define flag
@@ -200,7 +212,7 @@ end
 
 -- make the includedir flag
 function nf_includedir(self, dir)
-    return {"-I", dir}
+    return {"-I" .. path.translate(dir)}
 end
 
 -- make the sysincludedir flag
@@ -220,7 +232,7 @@ end
 
 -- make the linkdir flag
 function nf_linkdir(self, dir)
-    return {"-L", dir}
+    return {"-L" .. path.translate(dir)}
 end
 
 -- make the rpathdir flag
@@ -258,9 +270,9 @@ function linkargv(self, objectfiles, targetkind, targetfile, flags)
     end
 
     -- add `-Wl,--out-implib,outputdir/libxxx.a` for xxx.dll on mingw/gcc
-    if targetkind == "shared" and config.plat() == "mingw" then
+    if targetkind == "shared" and is_plat("mingw") then
         table.insert(flags_extra, "-Xlinker")
-        table.insert(flags_extra, "-Wl,--out-implib," .. path.join(path.directory(targetfile), path.basename(targetfile) .. ".lib"))
+        table.insert(flags_extra, "-Wl,--out-implib," .. path.join(path.directory(targetfile), path.basename(targetfile) .. ".dll.a"))
     end
 
     -- make link args
@@ -270,13 +282,14 @@ end
 -- link the target file
 function link(self, objectfiles, targetkind, targetfile, flags)
     os.mkdir(path.directory(targetfile))
-    os.runv(linkargv(self, objectfiles, targetkind, targetfile, flags))
+    local program, argv = linkargv(self, objectfiles, targetkind, targetfile, flags)
+    os.runv(program, argv, {envs = self:runenvs()})
 end
 
 -- support `-MMD -MF depfile.d`? some old gcc does not support it at same time
 function _has_flags_mmd_mf(self)
     local has_mmd_mf = _g._HAS_MMD_MF
-    if has_mmd_mf == nil then
+    if has_mmd_mf == nil and not is_host("windows") then
        has_mmd_mf = self:has_flags({"-MMD", "-MF", os.nuldev()}, "cuflags", { flagskey = "-MMD -MF" }) or false
         _g._HAS_MMD_MF = has_mmd_mf
     end
@@ -286,7 +299,7 @@ end
 -- support `-MM -o depfile.d`?
 function _has_flags_mm(self)
     local has_mm = _g._HAS_MM
-    if not has_mmd_mf and has_mm == nil then
+    if not has_mmd_mf and has_mm == nil and not is_host("windows") then
         has_mm = self:has_flags("-MM", "cuflags", { flagskey = "-MM" }) or false
         _g._HAS_MM = has_mm
     end
@@ -317,12 +330,14 @@ function compile(self, sourcefile, objectfile, dependinfo, flags)
                     compflags = table.join(compflags, "-MMD", "-MF", depfile)
                 elseif _has_flags_mm(self) then
                     -- since -MD is not supported, run nvcc twice
-                    os.runv(compargv(self, sourcefile, depfile, table.join(flags, "-MM")))
+                    local program, argv = compargv(self, sourcefile, depfile, table.join(flags, "-MM"))
+                    os.runv(program, argv, {envs = self:runenvs()})
                 end
             end
 
             -- do compile
-            local outdata, errdata = os.iorunv(compargv(self, sourcefile, objectfile, compflags))
+            local program, argv = compargv(self, sourcefile, objectfile, compflags)
+            local outdata, errdata = os.iorunv(program, argv, {envs = self:runenvs()})
             return (outdata or "") .. (errdata or "")
         end,
         catch
@@ -346,7 +361,7 @@ function compile(self, sourcefile, objectfile, dependinfo, flags)
                 -- get 16 lines of errors
                 if start > 0 or not option.get("verbose") then
                     if start == 0 then start = 1 end
-                    errors = table.concat(table.slice(lines, start, start + ifelse(#lines - start > 16, 16, #lines - start)), "\n")
+                    errors = table.concat(table.slice(lines, start, start + ((#lines - start > 16) and 16 or (#lines - start))), "\n")
                 end
 
                 -- raise compiling errors

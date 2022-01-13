@@ -158,9 +158,18 @@ function _install(sourcedir)
                     if os.isfile(win_installer_name) then
                         -- /D sets the default installation directory ($INSTDIR), overriding InstallDir and InstallDirRegKey. It must be the last parameter used in the command line and must not contain any quotes, even if the path contains spaces. Only absolute paths are supported.
                         local params = ("/D=" .. os.programdir()):split("%s", { strict = true })
-                        local testfile = path.join(os.programdir(), "temp-install")
-                        local no_admin = os.trycp(path.join(os.programdir(), "scripts", "run.vbs"), testfile)
-                        os.tryrm(testfile)
+                        -- @see https://github.com/xmake-io/xmake/issues/1576
+                        local no_admin = try {function () return winos.registry_query("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\XMake;NoAdmin") end}
+                        if no_admin == nil then
+                            no_admin = try {function () return winos.registry_query("HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\XMake;NoAdmin") end}
+                        end
+                        if no_admin ~= nil then
+                            no_admin = tostring(no_admin):lower() == "true"
+                        else
+                            local testfile = path.join(os.programdir(), "temp-install")
+                            no_admin = os.trycp(path.join(os.programdir(), "scripts", "run.vbs"), testfile)
+                            os.tryrm(testfile)
+                        end
                         if no_admin then table.insert(params, 1, "/NOADMIN") end
                         -- need UAC?
                         if winos:version():gt("winxp") then
@@ -173,7 +182,7 @@ function _install(sourcedir)
                     end
                 else
                     os.vrun("make build")
-                    process.openv("./scripts/get.sh", {"__local__", "__install_only__"}, {stdout = os.tmpfile(), stderr = os.tmpfile()}, {detach = true}):close()
+                    process.openv("./scripts/get.sh", {"__local__", "__install_only__"}, {stdout = os.tmpfile(), stderr = os.tmpfile(), detach = true}):close()
                 end
                 return true
             end,
@@ -223,7 +232,7 @@ function _install_script(sourcedir)
                 local script_original = path.join(os.programdir(), "scripts", "update-script.bat")
                 local script = os.tmpfile() .. ".bat"
                 os.cp(script_original, script)
-                local params = { "/c", script, os.programdir(),  source }
+                local params = { "/c", script, os.programdir(), source }
                 os.tryrm(script_original .. ".bak")
                 local access = os.trymv(script_original, script_original .. ".bak")
                 _run_win_v("cmd", params, not access)
@@ -311,8 +320,7 @@ function main()
 
         local winarch = os.arch() == "x64" and "win64" or "win32"
         if version:find('.', 1, true) then
-            mainurls = {format("https://ci.appveyor.com/api/projects/waruqi/xmake/artifacts/xmake-installer.exe?tag=%s&pr=false&job=Image%%3A+Visual+Studio+2017%%3B+Platform%%3A+%s", version, os.arch()),
-                        format("https://github.com/xmake-io/xmake/releases/download/%s/xmake-%s.%s.exe", version, version, winarch),
+            mainurls = {format("https://github.com/xmake-io/xmake/releases/download/%s/xmake-%s.%s.exe", version, version, winarch),
                         format("https://cdn.jsdelivr.net/gh/xmake-mirror/xmake-releases@%s/xmake-%s.%s.exe.zip", version, version, winarch),
                         format("https://gitlab.com/xmake-mirror/xmake-releases/raw/%s/xmake-%s.%s.exe.zip", version, version, winarch)}
         else
@@ -320,8 +328,7 @@ function main()
             local tags = fetchinfo.tags
             table.sort(tags)
             local latest_version = tags[#tags] or ("v" .. xmake.version():shortstr())
-            mainurls = {format("https://ci.appveyor.com/api/projects/waruqi/xmake/artifacts/xmake-installer.exe?branch=%s&pr=false&job=Image%%3A+Visual+Studio+2017%%3B+Platform%%3A+%s", version, os.arch()),
-                        format("https://github.com/xmake-io/xmake/releases/download/%s/xmake-%s.%s.exe", latest_version, version, winarch)}
+            mainurls = {format("https://github.com/xmake-io/xmake/releases/download/%s/xmake-%s.%s.exe", latest_version, version, winarch)}
         end
 
         -- re-sort mainurls

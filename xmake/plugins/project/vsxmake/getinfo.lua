@@ -134,7 +134,7 @@ function _make_targetinfo(mode, arch, target)
     -- use target:get("xxx") rather than target:xxx()
 
     -- save target kind
-    targetinfo.kind          = target:get("kind")
+    targetinfo.kind          = target:kind()
 
     -- is default?
     targetinfo.default       = tostring(target:is_default())
@@ -180,7 +180,13 @@ function _make_targetinfo(mode, arch, target)
     local addrunenvs, setrunenvs = make_runenvs(target)
     for k, v in pairs(target:pkgenvs()) do
         addrunenvs = addrunenvs or {}
-        addrunenvs[k] = table.join(table.wrap(addrunenvs[k]), v)
+        addrunenvs[k] = table.join(table.wrap(addrunenvs[k]), path.splitenv(v))
+    end
+    for _, dep in ipairs(target:orderdeps()) do
+        for k, v in pairs(dep:pkgenvs()) do
+            addrunenvs = addrunenvs or {}
+            addrunenvs[k] = table.join(table.wrap(addrunenvs[k]), path.splitenv(v))
+        end
     end
     for k, v in pairs(addrunenvs) do
         if k:upper() == "PATH" then
@@ -256,7 +262,17 @@ function _make_vsinfo_archs()
         end
     else
         -- we use it first if global set_arch("xx") is setted in xmake.lua
-        vsinfo_archs = project.get("target.arch") or platform.archs()
+        vsinfo_archs = project.get("target.arch")
+        if not vsinfo_archs then
+            -- for set_allowedarchs()
+            local allowed_archs = project.allowed_archs(config.plat())
+            if allowed_archs then
+                vsinfo_archs = allowed_archs:to_array()
+            end
+        end
+        if not vsinfo_archs then
+            vsinfo_archs = platform.archs()
+        end
     end
     if not vsinfo_archs or #vsinfo_archs == 0 then
         vsinfo_archs = { config.arch() }

@@ -72,19 +72,14 @@ function main(name, opt)
     end
 
     -- detect.tools.xxx.features(opt)?
-    _g._checking = ifelse(coroutine_running, key, nil)
+    _g._checking = coroutine_running and key or nil
     local features = import("detect.tools." .. tool.name .. ".features", {try = true})
     if features then
         result = features(opt)
     end
     _g._checking = nil
 
-    -- no features?
     result = result or {}
-
-    -- save result to cache
     results[key] = result
-
-    -- ok?
     return result
 end

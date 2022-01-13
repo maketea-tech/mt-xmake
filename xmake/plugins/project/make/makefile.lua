@@ -33,7 +33,7 @@ end
 
 -- mkdir directory
 function _mkdir(makefile, dir)
-    if is_plat("windows") then
+    if is_subhost("windows") then
         makefile:print("\t-@mkdir %s > NUL 2>&1", dir)
     else
         makefile:print("\t@mkdir -p %s", dir)
@@ -42,7 +42,7 @@ end
 
 -- copy file
 function _cp(makefile, sourcefile, targetfile)
-    if is_plat("windows") then
+    if is_subhost("windows") then
         makefile:print("\t@copy /Y %s %s > NUL 2>&1", sourcefile, targetfile)
     else
         makefile:print("\t@cp %s %s", sourcefile, targetfile)
@@ -51,7 +51,7 @@ end
 
 -- try to remove the given file or directory
 function _tryrm(makefile, filedir)
-    if is_plat("windows") then
+    if is_subhost("windows") then
         -- we attempt to delete it as file first, we remove it as directory if failed
         makefile:print("\t@del /F /Q %s > NUL 2>&1 || rmdir /S /Q %s > NUL 2>&1", filedir, filedir)
     else
@@ -109,7 +109,7 @@ function _make_common_flags(target, sourcekind, sourcebatch)
     -- make common flags
     local commonflags = {}
     for _, flag in ipairs(first_flags) do
-        if flags_stats[flag] == files_count then
+        if flags_stats[flag] >= files_count then
             table.insert(commonflags, flag)
         end
     end
@@ -119,7 +119,7 @@ function _make_common_flags(target, sourcekind, sourcebatch)
     for sourcefile, flags in pairs(sourceflags) do
         local otherflags = {}
         for _, flag in ipairs(flags) do
-            if flags_stats[flag] ~= files_count then
+            if flags_stats[flag] < files_count then
                 table.insert(otherflags, flag)
             end
         end
@@ -220,8 +220,17 @@ function _make_target(makefile, target, targetflags)
 
     -- make head
     local targetfile = target:targetfile()
-    makefile:print("%s: %s", target:name(), targetfile)
-    makefile:printf("%s:", targetfile)
+    local targetname = target:name()
+
+    -- rules like `./target` and `target` are equivalent and can causes issues
+    -- for cases where targetdir is .
+    -- in these cases, the targetfile rule is not created
+    if targetfile == "./" .. targetname then
+        makefile:printf("%s:", targetname)
+    else
+        makefile:print("%s: %s", targetname, targetfile)
+        makefile:printf("%s:", targetfile)
+    end
 
     -- make dependence for the dependent targets
     for _, depname in ipairs(target:get("deps")) do

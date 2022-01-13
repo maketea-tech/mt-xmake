@@ -117,6 +117,10 @@ function nf_language(self, stdname)
         ,   gnu99       = "-Xclang -std=gnu99"
         ,   c11         = "-Xclang -std=c11"
         ,   gnu11       = "-Xclang -std=gnu11"
+        ,   c17         = "-Xclang -std=c17"
+        ,   gnu17       = "-Xclang -std=gnu17"
+        ,   clatest     = "-Xclang -std=c17"
+        ,   gnulatest   = "-Xclang -std=gnu17"
         }
     end
 
@@ -134,10 +138,12 @@ function nf_language(self, stdname)
         ,   gnuxx17      = "-Xclang -std=gnu++17"
         ,   cxx1z        = "-Xclang -std=c++1z"
         ,   gnuxx1z      = "-Xclang -std=gnu++1z"
-        ,   cxx20        = "-Xclang -std=c++2a"
-        ,   gnuxx20      = "-Xclang -std=gnu++2a"
+        ,   cxx20        = "-Xclang -std=c++20"
+        ,   gnuxx20      = "-Xclang -std=gnu++20"
         ,   cxx2a        = "-Xclang -std=c++2a"
         ,   gnuxx2a      = "-Xclang -std=gnu++2a"
+        ,   cxxlatest    = "-Xclang -std=c++latest"
+        ,   gnuxxlatest  = "-Xclang -std=gnu++latest"
         }
         local cxxmaps2 = {}
         for k, v in pairs(_g.cxxmaps) do
@@ -205,7 +211,7 @@ function compile(self, sourcefile, objectfile, dependinfo, flags)
 
                     -- get 16 lines of errors
                     if start > 0 then
-                        lines = table.slice(lines, start, start + ifelse(#lines - start > 16, 16, #lines - start))
+                        lines = table.slice(lines, start, start + ((#lines - start > 16) and 16 or (#lines - start)))
                     end
                 end
 
@@ -220,7 +226,7 @@ function compile(self, sourcefile, objectfile, dependinfo, flags)
                 if ok and errdata and #errdata > 0 and (option.get("diagnosis") or option.get("warning")) then
                     local lines = errdata:split('\n', {plain = true})
                     if #lines > 0 then
-                        local warnings = table.concat(table.slice(lines, 1, ifelse(#lines > 8, 8, #lines)), "\n")
+                        local warnings = table.concat(table.slice(lines, 1, (#lines > 8 and 8 or #lines)), "\n")
                         cprint("${color.warning}%s", warnings)
                     end
                 end

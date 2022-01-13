@@ -49,7 +49,7 @@ os.SYSERR_NOT_PERM    = 1
 os.SYSERR_NOT_FILEDIR = 2
 
 -- copy single file or directory
-function os._cp(src, dst, rootdir)
+function os._cp(src, dst, rootdir, opt)
 
     -- check
     assert(src and dst)
@@ -65,7 +65,7 @@ function os._cp(src, dst, rootdir)
     end
 
     -- is file?
-    if os.isfile(src) then
+    if os.isfile(src) or os.islink(src) then
 
         -- the destination is directory? append the filename
         if os.isdir(dst) or path.islastsep(dst) then
@@ -76,9 +76,17 @@ function os._cp(src, dst, rootdir)
             end
         end
 
-        -- copy file
-        if not os.cpfile(src, dst) then
-            return false, string.format("cannot copy file %s to %s, %s", src, dst, os.strerror())
+        -- link file if reserve symlink
+        if opt and opt.symlink and os.islink(src) then
+            local reallink = os.readlink(src)
+            if not os.link(reallink, dst) then
+                return false, string.format("cannot link %s(%s) to %s, %s", src, reallink, dst, os.strerror())
+            end
+        else
+            -- copy file
+            if not os.cpfile(src, dst) then
+                return false, string.format("cannot copy file %s to %s, %s", src, dst, os.strerror())
+            end
         end
     -- is directory?
     elseif os.isdir(src) then
@@ -191,6 +199,13 @@ function os._sched_chdir_set(chdir)
     os._SCHED_CHDIR = chdir
 end
 
+-- notify envs have been changed
+function os._notify_envs_changed(envs)
+    if os._SCHED_CHENVS then
+        os._SCHED_CHENVS(envs)
+    end
+end
+
 -- the current host is belong to the given hosts?
 function os._is_host(host, ...)
 
@@ -231,6 +246,28 @@ function os._match_wildcard_pathes(v)
     return v
 end
 
+-- split too long path environment variable for windows
+--
+-- @see https://github.com/xmake-io/xmake-repo/pull/489
+-- https://stackoverflow.com/questions/34491244/environment-variable-is-too-large-on-windows-10
+--
+function os._deduplicate_pathenv(value)
+    if value and #value > 4096 then
+        local itemset = {}
+        local results = {}
+        for _, item in ipairs(path.splitenv(value)) do
+            if not itemset[item] then
+                table.insert(results, item)
+                itemset[item] = true
+            end
+        end
+        if #results > 0 then
+            value = path.joinenv(results)
+        end
+    end
+    return value
+end
+
 -- match files or directories
 --
 -- @param pattern   the search pattern
@@ -263,11 +300,7 @@ function os.match(pattern, mode, callback)
         local _excludes = {}
         for _, exclude in ipairs(excludes) do
             exclude = path.translate(exclude)
-            exclude = exclude:gsub("([%+%.%-%^%$%(%)%%])", "%%%1")
-            exclude = exclude:gsub("%*%*", "\001")
-            exclude = exclude:gsub("%*", "\002")
-            exclude = exclude:gsub("\001", ".*")
-            exclude = exclude:gsub("\002", "[^/]*")
+            exclude = path.pattern(exclude)
             table.insert(_excludes, exclude)
         end
         excludes = _excludes
@@ -344,7 +377,7 @@ end
 
 -- match directories
 --
--- @note only return {} without count to simplify code, e.g. unpack(os.dirs(""))
+-- @note only return {} without count to simplify code, e.g. table.unpack(os.dirs(""))
 --
 function os.dirs(pattern, callback)
     return (os.match(pattern, 'd', callback))
@@ -361,7 +394,7 @@ function os.filedirs(pattern, callback)
 end
 
 -- copy files or directories and we can reserve the source directory structure
--- e.g. os.cp("src/**.h", "/tmp/", {rootdir = "src"})
+-- e.g. os.cp("src/**.h", "/tmp/", {rootdir = "src", symlink = true})
 function os.cp(srcpath, dstpath, opt)
 
     -- check arguments
@@ -380,10 +413,10 @@ function os.cp(srcpath, dstpath, opt)
     -- copy files or directories
     local srcpathes = os._match_wildcard_pathes(srcpath)
     if type(srcpathes) == "string" then
-        return os._cp(srcpathes, dstpath, rootdir)
+        return os._cp(srcpathes, dstpath, rootdir, opt)
     else
         for _, _srcpath in ipairs(srcpathes) do
-            local ok, errors = os._cp(_srcpath, dstpath, rootdir)
+            local ok, errors = os._cp(_srcpath, dstpath, rootdir, opt)
             if not ok then
                 return false, errors
             end
@@ -693,9 +726,12 @@ function os.execv(program, argv, opt)
     if opt.envs then
         local envars = os.getenvs()
         for k, v in pairs(opt.envs) do
-            -- TODO
             if type(v) == "table" then
                 v = path.joinenv(v)
+            end
+            -- we try to fix too long value before running process
+            if type(v) == "string" and #v > 4096 and os.host() == "windows" then
+                v = os._deduplicate_pathenv(v)
             end
             envars[k] = v
         end
@@ -725,8 +761,6 @@ function os.execv(program, argv, opt)
         -- cannot execute process
         return nil, os.strerror()
     end
-
-    -- ok?
     return ok
 end
 
@@ -990,6 +1024,7 @@ function os.term()
 end
 
 -- get all current environment variables
+-- e.g. envs["PATH"] = "/xxx:/yyy/foo"
 function os.getenvs()
     local envs = {}
     for _, line in ipairs(os._getenvs()) do
@@ -1009,29 +1044,75 @@ function os.getenvs()
 end
 
 -- set all current environment variables
+-- e.g. envs["PATH"] = "/xxx:/yyy/foo"
 function os.setenvs(envs)
+    local oldenvs = os.getenvs()
     if envs then
         local changed = false
         -- remove new added values
-        local curenvs = os.getenvs()
-        for name, _ in pairs(curenvs) do
+        for name, _ in pairs(oldenvs) do
             if not envs[name] then
-                os._setenv(name, "")
-                changed = true
+                if os._setenv(name, "") then
+                    changed = true
+                end
             end
         end
         -- change values
         for name, values in pairs(envs) do
-            if curenvs[name] ~= values then
-                os._setenv(name, values)
+            if oldenvs[name] ~= values then
+                if os._setenv(name, values) then
+                    changed = true
+                end
+            end
+        end
+        if changed then
+            os._notify_envs_changed(envs)
+        end
+    end
+    return oldenvs
+end
+
+-- add environment variables
+-- e.g. envs["PATH"] = "/xxx:/yyy/foo"
+function os.addenvs(envs)
+    local oldenvs = os.getenvs()
+    if envs then
+        local changed = false
+        for name, values in pairs(envs) do
+            local ok
+            local oldenv = oldenvs[name]
+            if oldenv == "" or oldenv == nil then
+                ok = os._setenv(name, values)
+            elseif not oldenv:startswith(values) then
+                ok = os._setenv(name, values .. path.envsep() .. oldenv)
+            end
+            if ok then
                 changed = true
             end
         end
-        -- update envs for scheduler
-        if changed and os._SCHED_CHENVS then
-            os._SCHED_CHENVS(envs)
+        if changed then
+            os._notify_envs_changed()
         end
     end
+    return oldenvs
+end
+
+-- join environment variables
+function os.joinenvs(envs, oldenvs)
+    oldenvs = oldenvs or os.getenvs()
+    local newenvs = oldenvs
+    if envs then
+        newenvs = table.copy(oldenvs)
+        for name, values in pairs(envs) do
+            local oldenv = oldenvs[name]
+            if oldenv == "" or oldenv == nil then
+                newenvs[name] = values
+            elseif not oldenv:startswith(values) then
+                newenvs[name] = values .. path.envsep() .. oldenv
+            end
+        end
+    end
+    return newenvs
 end
 
 -- set values to environment variable
@@ -1044,9 +1125,8 @@ function os.setenv(name, ...)
     else
         ok = os._setenv(name, path.joinenv(values))
     end
-    -- update envs for scheduler
-    if ok and os._SCHED_CHENVS then
-        os._SCHED_CHENVS()
+    if ok then
+        os._notify_envs_changed()
     end
     return ok
 end
@@ -1056,16 +1136,24 @@ function os.addenv(name, ...)
     local values = {...}
     if #values > 0 then
         local ok
+        local changed = false
         local oldenv = os.getenv(name)
         local appendenv = path.joinenv(values)
         if oldenv == "" or oldenv == nil then
             ok = os._setenv(name, appendenv)
-        else
+            if ok then
+                changed = true
+            end
+        elseif not oldenv:startswith(appendenv) then
             ok = os._setenv(name, appendenv .. path.envsep() .. oldenv)
+            if ok then
+                changed = true
+            end
+        else
+            ok = true
         end
-        -- update envs for scheduler
-        if ok and os._SCHED_CHENVS then
-            os._SCHED_CHENVS()
+        if changed then
+            os._notify_envs_changed()
         end
         return ok
     else
@@ -1077,9 +1165,8 @@ end
 function os.setenvp(name, values, sep)
     sep = sep or path.envsep()
     local ok = os._setenv(name, table.concat(table.wrap(values), sep))
-    -- update envs for scheduler
-    if ok and os._SCHED_CHENVS then
-        os._SCHED_CHENVS()
+    if ok then
+        os._notify_envs_changed()
     end
     return ok
 end
@@ -1090,16 +1177,24 @@ function os.addenvp(name, values, sep)
     values = table.wrap(values)
     if #values > 0 then
         local ok
+        local changed = false
         local oldenv = os.getenv(name)
         local appendenv = table.concat(values, sep)
         if oldenv == "" or oldenv == nil then
             ok = os._setenv(name, appendenv)
-        else
+            if ok then
+                changed = true
+            end
+        elseif not oldenv:startswith(appendenv) then
             ok = os._setenv(name, appendenv .. sep .. oldenv)
+            if ok then
+                changed = true
+            end
+        else
+            ok = true
         end
-        -- update envs for scheduler
-        if ok and os._SCHED_CHENVS then
-            os._SCHED_CHENVS()
+        if changed then
+            os._notify_envs_changed()
         end
         return ok
     else
@@ -1138,6 +1233,21 @@ end
 -- get cpu info
 function os.cpuinfo(name)
     return require("base/cpu").info(name)
+end
+
+-- get the default parallel jobs number
+function os.default_njob()
+    local njob = math.ceil(os.cpuinfo().ncpu * 3 / 2)
+    if os.host() == "windows" and njob > 128 then
+        njob = 128
+    end
+    if njob > 512 then
+        njob = 512
+    end
+    if njob < 1 then
+        njob = 1
+    end
+    return njob
 end
 
 -- read the content of symlink

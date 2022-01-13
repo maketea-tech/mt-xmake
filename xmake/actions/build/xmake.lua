@@ -44,11 +44,17 @@ task("build")
                     {'b', "build",      "k",  nil   , "Build target. This is default building mode and optional."     }
                 ,   {'r', "rebuild",    "k",  nil   , "Rebuild the target."                                           }
                 ,   {'a', "all",        "k",  nil   , "Build all targets."                                            }
+                ,   {'g', "group",      "kv",  nil  , "Build all targets of the given group. It support path pattern matching.",
+                                                      "e.g.",
+                                                      "    xmake -g test",
+                                                      "    xmake -g test_*",
+                                                      "    xmake --group=benchmark/*"                                 }
                 ,   {nil, "dry-run",    "k",  nil   , "Dry run to build target."                                      }
 
                 ,   {}
-                ,   {'j', "jobs",       "kv", tostring(math.ceil(os.cpuinfo().ncpu * 3 / 2)),
-                                                      "Specifies the number of jobs to build simultaneously."         }
+                ,   {'j', "jobs",       "kv", tostring(os.default_njob()),
+                                                      "Set the number of parallel compilation jobs."                  }
+                ,   {nil, "linkjobs",   "kv", nil,    "Set the number of parallel link jobs."                         }
                 ,   {'w', "warning",    "k",  false , "Enable the warnings output."                                   }
                 ,   {nil, "files",      "kv", nil   , "Build the given source files.",
                                                       "e.g. ",

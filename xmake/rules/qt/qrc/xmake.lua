@@ -24,8 +24,15 @@ rule("qt.qrc")
     on_load(function (target)
 
         -- get rcc
-        local rcc = path.join(target:data("qt").bindir, is_host("windows") and "rcc.exe" or "rcc")
-        assert(rcc and os.isexec(rcc), "rcc not found!")
+        local qt = assert(target:data("qt"), "qt not found!")
+        local rcc = path.join(qt.bindir, is_host("windows") and "rcc.exe" or "rcc")
+        if not os.isexec(rcc) and qt.libexecdir then
+            rcc = path.join(qt.libexecdir, is_host("windows") and "rcc.exe" or "rcc")
+        end
+        if not os.isexec(rcc) and qt.libexecdir_host then
+            rcc = path.join(qt.libexecdir_host, is_host("windows") and "rcc.exe" or "rcc")
+        end
+        assert(os.isexec(rcc), "rcc not found!")
 
         -- save rcc
         target:data_set("qt.rcc", rcc)

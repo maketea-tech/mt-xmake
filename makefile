@@ -1,9 +1,10 @@
 # is debug?
 debug  		:=n
-verbose 	:=
 
-#debug   	:=y
-#verbose 	:=-v
+# verbose
+ifneq ($(VERBOSE),y)
+VECHO = @
+endif
 
 # prefix
 ifeq ($(prefix),) # compatible with brew script (make install PREFIX=xxx DESTDIR=/xxx)
@@ -12,6 +13,11 @@ prefix 		:=$(if $(findstring /usr/local/bin,$(PATH)),/usr/local,/usr)
 else
 prefix 		:=$(PREFIX)
 endif
+endif
+
+# use luajit or lua backend
+ifeq ($(RUNTIME),)
+RUNTIME 	:=lua
 endif
 
 # the temporary directory
@@ -93,7 +99,7 @@ xrepo_bin_install   :=$(destdir)/bin/xrepo
 build:
 	@echo compiling xmake-core ...
 	@if [ -f core/.config.mak ]; then rm core/.config.mak; fi
-	+@$(MAKE) -C core --no-print-directory f DEBUG=$(debug)
+	+@$(MAKE) -C core --no-print-directory f DEBUG=$(debug) RUNTIME=$(RUNTIME)
 	+@$(MAKE) -C core --no-print-directory c
 	+@$(MAKE) -C core --no-print-directory
 
@@ -111,12 +117,13 @@ install:
 	@if [ ! -d $(destdir)/bin ]; then mkdir -p $(destdir)/bin; fi
 	@# install the xmake directory
 	@cp -r xmake/* $(xmake_dir_install)
-	@# install the xmake core file
+	@# install the xmake core file, @note we need remove old binary first on mac M1, otherwise it will be killed
+	@if [ -f $(xmake_core_install) ]; then rm $(xmake_core_install); fi
 	@cp -p $(xmake_core) $(xmake_core_install)
-	@chmod 777 $(xmake_core_install)
+	@chmod 755 $(xmake_core_install)
 	@# install the xrepo bin file
 	@cp -p ./scripts/xrepo.sh $(xrepo_bin_install)
-	@chmod 777 $(xrepo_bin_install)
+	@chmod 755 $(xrepo_bin_install)
 	@# remove xmake.out
 	@if [ -f "$(TMP_DIR)/xmake.out" ]; then rm $(TMP_DIR)/xmake.out; fi
 	@# ok
