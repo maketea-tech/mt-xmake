@@ -47,6 +47,8 @@ function _install_for_classic(vcpkg, name, opt)
     if plat == "macosx" then
         plat = "osx"
     end
+
+    plat = configurations.plat(plat)
     arch = configurations.arch(arch)
 
     -- init triplet

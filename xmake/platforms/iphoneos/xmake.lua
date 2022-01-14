@@ -31,7 +31,11 @@ platform("iphoneos")
     if os.arch() == "arm64" then -- on apple m1 device
         set_archs("arm64", "x86_64")
     else
+        -- xgame 0.4.17
         set_archs("arm64", "armv7", "armv7s", "i386", "x86_64")
+
+        -- xgame 0.3.5
+        -- set_archs("arm64", "armv7")
     end
 
     -- set formats

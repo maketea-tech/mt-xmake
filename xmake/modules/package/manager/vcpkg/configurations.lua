@@ -31,14 +31,14 @@ function arch(arch)
 
         -- ios: arm64 armv7 armv7s i386
         armv7           = "arm",
-        armv7s          = "arm",
+        armv7s          = "armv7s",
         arm64           = "arm64",
     }
     return archs[arch] or arch
 end
 
 -- get platform for vcpkg
-function plat()
+function plat(plat)
     local plats = {
         macosx          = "osx",
         iphoneos        = "ios",

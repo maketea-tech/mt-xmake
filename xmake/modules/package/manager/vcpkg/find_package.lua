@@ -75,7 +75,7 @@ function _find_package(vcpkgdir, name, opt)
     local mode = opt.mode
     
     -- mapping plat
-    plat = configurations.arch(plat)
+    plat = configurations.plat(plat)
 
     -- archs mapping for vcpkg
     arch = configurations.arch(arch)
